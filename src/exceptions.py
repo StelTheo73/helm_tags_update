@@ -1,4 +1,4 @@
-from utils import write_text_to_file
+from src.utils import write_text_to_file
 
 class BaseTracerException(Exception):
     def __init__(self, exception_name, method_name, msg):
@@ -8,8 +8,9 @@ class BaseTracerException(Exception):
 
         self.message = "\n{} (from {}):\n\
             {}".format(self.exception_name, self.method_name, self.msg)
-        print(self.message)
-        write_text_to_file(self.message, "err.log", mode="a")
+        #print(self.message)
+        write_text_to_file("{}".format(self.message), "execution.log", mode = "a")
+        write_text_to_file("{}".format(self.message), "err.log", mode="a")
         
     def __str__(self):
         return self.message 

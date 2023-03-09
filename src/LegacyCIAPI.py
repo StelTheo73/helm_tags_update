@@ -1,4 +1,4 @@
-from contants import (
+from src.contants import (
     LCI_GROUPS_URI,
     LCI_SUBGROUPS_URI,
     LCI_PROJECT_SEARCH_BY_NAME_URI,
@@ -6,7 +6,7 @@ from contants import (
     LCI_TAGS_URI,
     LCI_BRANCHES_URI
 )
-from GitlabAPI import GitlabAPI
+from src.GitlabAPI import GitlabAPI
 
 class LegacyCIAPI(GitlabAPI):
     def __init__(self):

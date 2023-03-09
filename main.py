@@ -1,30 +1,44 @@
 # Python Libraries
-import json
 import os
 import os.path
 
 # Program Libraries
-from CentralCIAPI import CentralCIAPI
-from LegacyCIAPI import LegacyCIAPI
-from exceptions import (
+from src.exceptions import (
     FetchInfoFailedException
 )
-from YamlUpdater import KubernetesRequirementsYamlUpdater
+from src.YamlUpdater import KubernetesRequirementsYamlUpdater
 
-def main():
+def setup():
     pwd = os.getcwd()
     err_log_file = os.path.join(pwd, "err.log")
+    exec_log_file = os.path.join(pwd, "execution.log")
+    old_yaml_file = os.path.join(pwd, "old.yaml")
+    req_yaml_file = os.path.join(pwd, "requirements.yaml")
+
     if os.path.exists(err_log_file):
         os.remove(err_log_file)
+    if os.path.exists(exec_log_file):
+        os.remove(exec_log_file)
+    if os.path.exists(old_yaml_file):
+        os.remove(old_yaml_file)
+    if os.path.exists(req_yaml_file):
+        os.remove(req_yaml_file)
 
+def main():
+    setup()
+    
     try:
-
         yamlUpdater = KubernetesRequirementsYamlUpdater()
         yamlUpdater.get_branch()
         yamlUpdater.fetch_requirements_file()
-
+        helm_projects_with_changed_tag = yamlUpdater.get_changed_tags()
+        updated_yaml_object = yamlUpdater.update_helm_tags(helm_projects_with_changed_tag)
+        yamlUpdater.write_yaml_to_file(updated_yaml_object)
+    except KeyboardInterrupt:
+        print("\nExecution terminated by user.")
     except FetchInfoFailedException as exc:
         print(exc)
+
 
 if __name__ == "__main__":
     main()

@@ -10,12 +10,12 @@ GITLAB1_API_URI_V4 = GITLAB1_URI + API_V4
 # Paths
 GROUPS_PATH    = "/groups/{group_name}"
 SUBGROUPS_PATH = "/groups/{group_name}/subgroups" +\
-                    "?page={{page_number}}"
+                    "?page={{page_number}}&per_page=50"
 PROJECT_SEARCH_BY_NAME_PATH = "/groups/{group_id}/projects?search={{project_name}}"
 PROJECTS_PATH  = "/groups/{group_id}/projects" +\
-                    "?include_subgroups=true&page={{page_number}}"
+                    "?include_subgroups=true&page={{page_number}}&per_page=50"
 TAGS_PATH      = "/projects/{project_id}/repository/tags" +\
-                    "?order_by=updated&page={{page_number}}"
+                    "?order_by=updated&page={{page_number}}&per_page=50"
 FILE_PATH      = "/projects/{project_id}/repository/files/{{path_to_file}}"
 BRANCH_PATH    = "/projects/{project_id}/repository/branches"
 

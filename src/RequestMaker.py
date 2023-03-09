@@ -2,17 +2,18 @@
 from inspect import stack
 import requests
 from requests.adapters import HTTPAdapter, Retry
-from utils import write_text_to_file
 
 # Program Libraries
-from contants import (
-    GET,
-    OK    
-)
-from exceptions import (
+from src.exceptions import (
     RequestFailedException,
     FetchInfoFailedException,
 )
+from src.contants import (
+    GET,
+    OK    
+)
+from src.utils import write_text_to_file
+
 
 class RequestMaker(requests.Session):
     def __init__(self):
@@ -37,7 +38,8 @@ class RequestMaker(requests.Session):
 
         try:
             request_method = getattr(self, method.lower())
-            print("Performing request to {} ...".format(uri))
+            write_text_to_file("Performing request to {} ...\n".format(uri), "execution.log", mode = "a")
+            #print("Performing request to {} ...".format(uri))
             
             response = request_method(uri, timeout = timeout)
         except Exception as exc:
@@ -55,17 +57,17 @@ class RequestMaker(requests.Session):
         Raises:
 
         """
-        print("{} -> {}".format(stack()[2].function, stack()[1].function))
+        write_text_to_file("{} -> {}\n".format(stack()[2].function, stack()[1].function), "execution.log", mode = "a")
         try:
             response = self.make_request(uri, method, timeout, retries)
 
             if response.status_code != OK:
-                caller = stack()[1].function
+                caller = stack()[0].function
                 msg = "Response status code was: {}.".format(response.status_code)
                 raise FetchInfoFailedException(caller, msg)
 
         except RequestFailedException:
-            caller = stack()[1].function
+            caller = stack()[0].function
             msg = "RequestFailedException was raised."
             raise   FetchInfoFailedException(caller, msg)
 
@@ -73,10 +75,3 @@ class RequestMaker(requests.Session):
     
     def validate_uri(self, uri):
         pass
-
-if __name__ == "__main__":
-    file_uri = "https://gitlabe1.ext.net.nokia.com/tas/kubernetes/raw/ntas-19-0/helm/nokia-tas/requirements.yaml"
-    server = RequestMaker()
-    response = server.make_request(file_uri)
-    print(response.status_code)
-    write_text_to_file(str(response.text), "requirements.yaml")

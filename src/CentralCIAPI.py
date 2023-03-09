@@ -1,4 +1,4 @@
-from contants import (
+from src.contants import (
     CCI_GROUPS_URI,
     CCI_SUBGROUPS_URI,
     CCI_PROJECT_SEARCH_BY_NAME_URI,
@@ -6,7 +6,7 @@ from contants import (
     CCI_TAGS_URI,
     CCI_BRANCHES_URI
 )
-from GitlabAPI import GitlabAPI
+from src.GitlabAPI import GitlabAPI
 
 class CentralCIAPI(GitlabAPI):
     def __init__(self):

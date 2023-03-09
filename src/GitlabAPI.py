@@ -1,10 +1,15 @@
 # Python Libraries
 import json
 import re
+from inspect import stack
+from halo import Halo
 
 # Program Libraries
-from exceptions import (ElementNotFoundException)
-from RequestMaker import RequestMaker
+from src.exceptions import (
+    ElementNotFoundException,
+    FetchInfoFailedException
+)
+from src.RequestMaker import RequestMaker
 
 class GitlabAPI(RequestMaker):
     groups_uri = None
@@ -17,31 +22,45 @@ class GitlabAPI(RequestMaker):
     def __init__(self):
         super().__init__()
 
-    def recursive_request(self, uri, deep_search = True):
+    def recursive_request(self, uri, deep_search = True, spinner_text = None):
         page_number = 1
         json_list = []
-
+        spinner_text = "Fetching {}...".format(spinner_text)
+        spinner = Halo(text = spinner_text, spinner = "dots")
+        spinner.start()
+        
         while True:
             page_uri = uri.format(page_number = page_number)
 
-            response = self._make_request(page_uri)
+            try:
+                response = self._make_request(page_uri)
+            except FetchInfoFailedException:
+                spinner.fail(text = spinner_text)
+                caller = stack()[0].function
+                msg = "RequestFailedException was raised."
+                raise   FetchInfoFailedException(caller, msg)
 
             if response.text == "[]":
                 break
             json_list += json.loads(response.text)
 
+            if not(deep_search):
+                break
+
             page_number +=1
+
+        spinner.succeed(text = spinner_text)
 
         return json_list
 
     def get_subgroups_of_group(self, group_name):
         uri = self.subgroups_uri.format(group_name = group_name)
-        json_list = self.recursive_request(uri)
+        json_list = self.recursive_request(uri, spinner_text = "subgroups")
         return json_list
 
     def get_projects_of_group(self, group_id):
         uri = self.projects_uri.format(group_id = group_id)
-        json_list = self.recursive_request(uri)
+        json_list = self.recursive_request(uri, spinner_text = "projects")
         return json_list
 
     def get_group_id_from_name(self, group_name):
@@ -80,7 +99,7 @@ class GitlabAPI(RequestMaker):
 
     def get_project_tags_from_project_id(self, project_id, deep_search = False):
         uri = self.project_tags_uri.format(project_id = project_id)
-        json_list = self.recursive_request(uri, deep_search)
+        json_list = self.recursive_request(uri, deep_search, spinner_text = "project {} tags".format(project_id))
         return json_list
 
     def get_branch_info(self, group_name, project_name, branch_name):
@@ -101,14 +120,16 @@ class GitlabAPI(RequestMaker):
             })
         return  projects_tags
 
-    def find_tag_by_title(self, tags_list, keyword):
-        """Finds the tag whose title starts with the given keyword."""
+    def match_tag_with_title(self, tags_list, keyword):
+        """Returns the first tag whose title starts with the given keyword."""
+        matches = []
         pattern = "^{}".format(keyword.lower())
         for element in tags_list:
             title = element["title"].lower()
             if re.match(pattern, title):
-                print(element["name"])
-                break
+                matches.append(element["name"])
+        
+        return matches
 
     def extract_project_name_and_id(self, json_list):
         project_info = []
@@ -127,11 +148,3 @@ class GitlabAPI(RequestMaker):
                 "title" : element["commit"]["title"]
             })
         return tag_info
-
-    @staticmethod
-    def transform_list_of_dicts_to_single_kv_pair_dict(_list, key_for_key, key_for_value):
-        _dict = {}
-        for element in _list:
-            name, id = element[key_for_key], element[key_for_value]
-            _dict[name] = id
-        return _dict
