@@ -7,7 +7,7 @@ API_V4 = "/api/v4"
 GITLAB_API_URI_V4  = GITLAB_URI + API_V4
 GITLAB1_API_URI_V4 = GITLAB1_URI + API_V4
 
-# Paths
+# URI Paths
 GROUPS_PATH    = "/groups/{group_name}"
 SUBGROUPS_PATH = "/groups/{group_name}/subgroups" +\
                     "?page={{page_number}}&per_page=50"
@@ -50,3 +50,13 @@ FORBIDDEN = 403
 NOT_FOUND = 404
 UNPROCESSABLE_ENTITY = 422
 INTERNAL_SERVER_ERROR = 500
+
+# ------------------- FILE NAMES -------------------
+
+# Log Files
+ERROR_LOG_FILE = "err.log"
+EXECUTION_LOG_FILE = "execution.log"
+
+# Yaml Files
+REQUIREMENTS_YAML_FILE = "requirements.yaml"
+OLD_YAML_FILE = "old.yaml"

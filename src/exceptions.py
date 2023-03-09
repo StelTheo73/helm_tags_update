@@ -1,3 +1,11 @@
+# Python Libraries
+from datetime import datetime
+
+# Program Libraries
+from src.contants import (
+    EXECUTION_LOG_FILE,
+    ERROR_LOG_FILE
+)
 from src.utils import write_text_to_file
 
 class BaseTracerException(Exception):
@@ -6,12 +14,20 @@ class BaseTracerException(Exception):
         self.method_name = method_name
         self.msg = msg
 
-        self.message = "\n{} (from {}):\n\
-            {}".format(self.exception_name, self.method_name, self.msg)
-        #print(self.message)
-        write_text_to_file("{}".format(self.message), "execution.log", mode = "a")
-        write_text_to_file("{}".format(self.message), "err.log", mode="a")
+        self.message = "{} (from {}):\n\
+            {}\n".format(self.exception_name, self.method_name, self.msg)
         
+        timestamp_message = "[{:%Y-%m-%d %H:%M:%S}] {}".format(
+            datetime.now(),
+            self.message
+        )
+  
+        try:
+            write_text_to_file(timestamp_message, EXECUTION_LOG_FILE, mode = "a")
+            write_text_to_file(timestamp_message, ERROR_LOG_FILE, mode="a")
+        except Exception:
+            print(self.message)
+
     def __str__(self):
         return self.message 
 

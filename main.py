@@ -6,23 +6,22 @@ import os.path
 from src.exceptions import (
     FetchInfoFailedException
 )
+from src.contants import (
+    REQUIREMENTS_YAML_FILE,
+    OLD_YAML_FILE,
+    EXECUTION_LOG_FILE,
+    ERROR_LOG_FILE
+)
 from src.YamlUpdater import KubernetesRequirementsYamlUpdater
 
 def setup():
     pwd = os.getcwd()
-    err_log_file = os.path.join(pwd, "err.log")
-    exec_log_file = os.path.join(pwd, "execution.log")
-    old_yaml_file = os.path.join(pwd, "old.yaml")
-    req_yaml_file = os.path.join(pwd, "requirements.yaml")
+    files = [REQUIREMENTS_YAML_FILE, OLD_YAML_FILE, EXECUTION_LOG_FILE, ERROR_LOG_FILE]
 
-    if os.path.exists(err_log_file):
-        os.remove(err_log_file)
-    if os.path.exists(exec_log_file):
-        os.remove(exec_log_file)
-    if os.path.exists(old_yaml_file):
-        os.remove(old_yaml_file)
-    if os.path.exists(req_yaml_file):
-        os.remove(req_yaml_file)
+    for file in files:
+        _file = os.path.join(pwd, file)
+        if os.path.exists(_file):
+            os.remove(_file)
 
 def main():
     setup()
