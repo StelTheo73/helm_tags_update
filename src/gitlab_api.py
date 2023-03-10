@@ -1,57 +1,25 @@
+"""Gitlab API"""
+
 # Python Libraries
 import json
 import re
 from inspect import stack
-from halo import Halo
 
 # Program Libraries
 from src.exceptions import (
-    ElementNotFoundException,
-    FetchInfoFailedException
+    ElementNotFoundException
 )
-from src.RequestMaker import RequestMaker
+from src.request_maker import RequestMaker
 
 class GitlabAPI(RequestMaker):
+    """The GitLabAPI class is a subclass of RequestMaker
+    and is responsible for making HTTP requests to Gitlab."""
     groups_uri = None
     subgroups_uri = None
     projects_uri = None
     project_search_by_name_uri = None
     project_tags_uri = None
     branches_uri = None
-
-    def __init__(self):
-        super().__init__()
-
-    def recursive_request(self, uri, deep_search = True, spinner_text = None):
-        page_number = 1
-        json_list = []
-        spinner_text = "Fetching {}...".format(spinner_text)
-        spinner = Halo(text = spinner_text, spinner = "dots")
-        spinner.start()
-        
-        while True:
-            page_uri = uri.format(page_number = page_number)
-
-            try:
-                response = self._make_request(page_uri)
-            except FetchInfoFailedException:
-                spinner.fail(text = spinner_text)
-                caller = stack()[0].function
-                msg = "RequestFailedException was raised."
-                raise   FetchInfoFailedException(caller, msg)
-
-            if response.text == "[]":
-                break
-            json_list += json.loads(response.text)
-
-            if not(deep_search):
-                break
-
-            page_number +=1
-
-        spinner.succeed(text = spinner_text)
-
-        return json_list
 
     def get_subgroups_of_group(self, group_name):
         uri = self.subgroups_uri.format(group_name = group_name)
@@ -65,12 +33,12 @@ class GitlabAPI(RequestMaker):
 
     def get_group_id_from_name(self, group_name):
         uri = self.groups_uri.format(group_name = group_name)
-        response = self._make_request(uri)
+        response = self.make_request_and_expect_200(uri)
         group_info = json.loads(response.text)
         if group_info["name"] == group_name:
             return group_info["id"]
         else:
-            raise ElementNotFoundException("get_group_id_from_name", group_name)
+            raise ElementNotFoundException(stack()[0], group_name)
 
     def get_subgroup_id_from_name(self, group_name, subgroup_name):
         json_list = self.get_subgroups_of_group(group_name)
@@ -81,21 +49,21 @@ class GitlabAPI(RequestMaker):
         for element in json_list:
             if element["name"] == name:
                 return element["id"]
-        raise ElementNotFoundException("_get_id_from_name", name)
+        raise ElementNotFoundException(stack()[0], name)
 
     def get_project_id_from_project_name(self, project_name, group_name):
         id = self.get_group_id_from_name(group_name)
         uri = self.project_search_by_name_uri.format(group_id = id)
         uri = uri.format(project_name = project_name)
 
-        response = self._make_request(uri)
+        response = self.make_request_and_expect_200(uri)
         json_list = json.loads(response.text)
 
         for element in json_list:
             if element["name"] == project_name:
                 return element["id"]
         
-        raise ElementNotFoundException("get_project_id_from_project_name", project_name)
+        raise ElementNotFoundException(stack()[0], project_name)
 
     def get_project_tags_from_project_id(self, project_id, deep_search = False):
         uri = self.project_tags_uri.format(project_id = project_id)
@@ -105,7 +73,8 @@ class GitlabAPI(RequestMaker):
     def get_branch_info(self, group_name, project_name, branch_name):
         project_id = self.get_project_id_from_project_name(project_name, group_name)
         uri = self.branches_uri.format(project_id = project_id) + "/{}".format(branch_name)
-        response = self._make_request(uri)
+        spinner_text = f"info for branch {branch_name} of /{group_name}/{project_name}"
+        response = self.make_request_and_display_spinner(uri, spinner_text)
         return json.loads(response.text)
 
     def find_tags_of_projects(self, projects_list, deep_search = False):

@@ -1,4 +1,6 @@
-from src.contants import (
+"""Legacy CI API."""
+
+from src.constants import (
     LCI_GROUPS_URI,
     LCI_SUBGROUPS_URI,
     LCI_PROJECT_SEARCH_BY_NAME_URI,
@@ -6,11 +8,13 @@ from src.contants import (
     LCI_TAGS_URI,
     LCI_BRANCHES_URI
 )
-from src.GitlabAPI import GitlabAPI
+from src.gitlab_api import GitlabAPI
 
 class LegacyCIAPI(GitlabAPI):
-    def __init__(self):
-        super().__init__()
+    """The LegacyCIAPI class is a subclass of GitlabAPI
+    and is responsible for making requests to Nokia's Legacy CI
+    Gitlab Repository (https://gitlabe1.ext.net.nokia.com/).
+    """
 
     groups_uri = LCI_GROUPS_URI
     subgroups_uri = LCI_SUBGROUPS_URI

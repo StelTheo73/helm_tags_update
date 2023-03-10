@@ -1,26 +1,30 @@
+"""Updater for requirements.yaml file"""
+
 # Python Libraries
+from inspect import stack
 import json
 import os
 import os.path
 import yaml
 
 # Program Libraries
-from src.CentralCIAPI import CentralCIAPI
-from src.LegacyCIAPI import LegacyCIAPI
-from src.contants import (
+from src.central_ci_api import CentralCIAPI
+from src.legacy_ci_api import LegacyCIAPI
+from src.constants import (
     GITLAB1_URI
-)                      
+)
 from src.exceptions import (
     BranchNotFoundException,
-    FetchInfoFailedException,
-    PathNotFoundException
+    FetchInfoFailedException
 )
 from src.utils import (
-    sort_list_dict_by_name,
     write_text_to_file
 )
 
-class KubernetesRequirementsYamlUpdater():
+class RequirementsYamlUpdater():
+    """The RequirementsYamlUpdater is responsible for updating requirements.yaml file
+    from /tas/kubernetes/helm/nokia-tas with the official tags related to the specified branch.
+    """
     default_project = "/tas/kubernetes"
     default_path = "/helm/nokia-tas"
     default_filename = "requirements.yaml"
@@ -30,24 +34,45 @@ class KubernetesRequirementsYamlUpdater():
                 "/{branch}" + "{path}" + "/{filename}"
 
     def __init__(self):
+        """Instantiates a RequirementsYamlUpdater object.
+
+        Creates a CentralCIAPI object to access Central CI.
+        Creates a LegacyCIAPI object to access Legacy CI.
+
+        """
         self.central_ci_api = CentralCIAPI()
         self.legacy_ci_api = LegacyCIAPI()
-        self.helm_project_tags = None
 
     def get_branch(self):
-        while (self.target_branch == None):
+        """Executes iteratively get_branch_name inside a try-except block
+           until a branch with the specified name is found in
+           Central CI.
+        """
+        while (self.target_branch is None):
             try:
                 self.target_branch = self.get_branch_name()
             except BranchNotFoundException:
                 continue
 
     def get_branch_name(self):
+        """Promts user to give a branch name and fetches branch info 
+        from Central CI.
+
+        Ensures that branch_input is an existing branch in Central CI.
+
+        Returns:
+            branch_input(string): The branch name (if it was found in Central CI). 
+
+        Raises:
+            BranchNotFoundException: If the given branch is not found. 
+
+        """
         message = "Type the target branch name: "
         error_message = "Branch name cannot be empty!"
 
         _, group, project = self.default_project.split("/")
 
-        while (True):
+        while True:
             branch_input = input(message)
 
             if branch_input == "":
@@ -60,19 +85,22 @@ class KubernetesRequirementsYamlUpdater():
                 if response["name"] == branch_input:
                     return branch_input
                 else:
-                    exc_msg = "Fetched branch name and specified target branch name are different (\"{}\" != \"{}\")"\
-                        .format(response["name"], branch_input)
-                    raise BranchNotFoundException("get_branch", branch_input, exc_msg)
-                
+                    name = response["name"]
+                    exc_msg = "Fetched branch name and specified target branch name " +\
+                        f"are different (\"{name}\" != \"{branch_input}\")"
+                    raise BranchNotFoundException(stack()[0], branch_input, exc_msg)
+
             except FetchInfoFailedException as exc:
-                    exc_msg = "FetchInfoFailedException was raised."
-                    
-                    if "Response status code was: 404" in exc.__str__():
-                        print("Branch \"{}\" was not found.\nMake sure it exists or check for typo.".format(branch_input))
-                    raise BranchNotFoundException("get_branch", branch_input, exc_msg)
-            
+                exc_msg = str(exc)
+                if "Response status code was: 404" in exc_msg:
+                    msg = f"\nBranch \"{branch_input}\" was not found. " +\
+                        "Make sure it exists or check for typo.\n"
+                    print(msg)
+                raise BranchNotFoundException(stack()[0], branch_input, exc_msg) \
+                    from exc
             except KeyError as exc:
-                raise BranchNotFoundException("get_branch", branch_input, exc)
+                raise BranchNotFoundException(stack()[0], branch_input, exc) \
+                    from exc
 
     def fetch_helm_tags(self, deep_search):
         helm_projects_with_tags = []
@@ -96,7 +124,7 @@ class KubernetesRequirementsYamlUpdater():
                                    branch = self.target_branch,
                                    path = self.default_path,
                                    filename = self.default_filename)
-        response = self.legacy_ci_api._make_request(uri)
+        response = self.legacy_ci_api.make_request_and_expect_200(uri)
         write_text_to_file(str(response.text), self.default_filename, mode = "w")
 
     def get_changed_tags(self, deep_search = False):
@@ -112,6 +140,9 @@ class KubernetesRequirementsYamlUpdater():
         return helm_projects_with_changed_tag
 
     def get_simple_tag(self, tags_list):
+        simple_tag = None
+        v_tag = ""
+
         if len(tags_list) > 2:
             raise AssertionError
 
@@ -160,7 +191,6 @@ class KubernetesRequirementsYamlUpdater():
         # write_text_to_file(json.dumps(yaml_object["dependencies"], indent=2), "out.json", mode = "w")
 
         return yaml_object
-
 
     def find_projects_related_with_branch(self, helm_projects_list_with_tags):
         related_projects = []
@@ -250,7 +280,7 @@ class KubernetesRequirementsYamlUpdater():
         return comments_dict
 
 if __name__ == "__main__":
-    yaml_updater = KubernetesRequirementsYamlUpdater()
+    yaml_updater = RequirementsYamlUpdater()
     
     with open("out.json") as f:
         yamlo = json.load(f)

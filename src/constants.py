@@ -1,3 +1,5 @@
+"""This module defines constants used by other modules."""
+
 # ------------------- URIs & PATHS -------------------
 
 # Gitlab URIs
