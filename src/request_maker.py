@@ -60,7 +60,7 @@ class RequestMaker(requests.Session):
         """
         self.backoff_factor = backoff_factor
 
-    def make_request(self, uri, method=GET, timeout = 10, retries = 20):
+    def make_request(self, uri, method=GET, timeout = 10, retries = 10):
         """Performs an HTTP request to a specified uri.
         
         Args:
@@ -103,7 +103,7 @@ class RequestMaker(requests.Session):
 
         return response
 
-    def make_request_and_expect_200(self, uri, method = GET, timeout = 10, retries = 20):
+    def make_request_and_expect_200(self, uri, method = GET, timeout = 10, retries = 10):
         """Executes make_request inside a try/except block 
         and verifies that status code is 200 - OK.
 
@@ -175,7 +175,7 @@ class RequestMaker(requests.Session):
 
         Args:
             uri(string): The uri to which the request will be made.
-            spinner_text: The text to be displayed next to the spiner.
+            spinner_text: The text to be displayed next to the spinner.
 
         Returns:
             (requests.models.Response object): The response from the server.
@@ -192,8 +192,7 @@ class RequestMaker(requests.Session):
         except FetchInfoFailedException as exc:
             spinner.fail(text = spinner_text)
             msg = str(exc)
-            caller = stack()[1]
-            raise FetchInfoFailedException(caller, msg) from exc
+            raise FetchInfoFailedException(stack()[0], msg) from exc
 
         spinner.succeed(text = spinner_text)
         return response

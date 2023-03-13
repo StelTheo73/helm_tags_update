@@ -2,7 +2,6 @@
 
 # Python Libraries
 from inspect import stack
-import json
 import os
 import os.path
 import yaml
@@ -21,6 +20,19 @@ from src.utils import (
     write_text_to_file
 )
 
+# Some helm projects do not have the same name as in
+# the requirements.yaml file, so a map is added.
+# Format:
+# {"name-in-yaml-file" : "project-name"}
+MAP_DIFFERENT_NAMES = {
+    "anomaly-detector" : "anomaly",
+    "auto-attendant"   : "autoattendant",
+    "oapi-docs"        : "oapidocs",
+    "sftp-server"      : "sftp",
+    "ss7-mgmt"         : "ss7",
+    "topology-routing-assistant" : "TopologyAndRoutingAssistant"
+}
+
 class RequirementsYamlUpdater():
     """The RequirementsYamlUpdater is responsible for updating requirements.yaml file
     from /tas/kubernetes/helm/nokia-tas with the official tags related to the specified branch.
@@ -29,9 +41,13 @@ class RequirementsYamlUpdater():
     default_path = "/helm/nokia-tas"
     default_filename = "requirements.yaml"
     target_branch = None
+    # URI to requirements.yaml file
     yaml_uri = GITLAB1_URI +\
                 "{project}" + "/raw" +\
                 "/{branch}" + "{path}" + "/{filename}"
+    # Dictionary containing helm projects whose tag
+    # could not be updated.
+    failed_update = {}
 
     def __init__(self):
         """Instantiates a RequirementsYamlUpdater object.
@@ -55,7 +71,7 @@ class RequirementsYamlUpdater():
                 continue
 
     def get_branch_name(self):
-        """Promts user to give a branch name and fetches branch info 
+        """Prompts user to give a branch name and fetches branch info 
         from Central CI.
 
         Ensures that branch_input is an existing branch in Central CI.
@@ -103,23 +119,31 @@ class RequirementsYamlUpdater():
                     from exc
 
     def fetch_helm_tags(self, deep_search):
-        helm_projects_with_tags = []
+        """Fetches tags of the helm projects from gitlab.
+        
+        Args:
+            deep_search(boolean): If true, all tags of the project will be
+                                  fetched.
+                                  If False, only the last 50 tags will be fetched.
 
+        Returns:
+            helm_project_tags(list): A list with dictionaries containing:
+                                        - "name" : Project name,
+                                        - "id" : Project id,
+                                        - "tags" : Project tags.
+
+        """
         helm_group_id = self.central_ci_api.get_subgroup_id_from_name("ntas", "helm")
         helm_projects_list = self.central_ci_api.get_projects_of_group(helm_group_id)
         helm_projects_list = self.central_ci_api.extract_project_name_and_id(helm_projects_list)
+        helm_project_tags = self.central_ci_api.find_tags_of_projects(helm_projects_list,
+                                                                      deep_search)
 
-        for helm_project in helm_projects_list:
-            project_id = helm_project["id"]
-            tags_list = self.central_ci_api.get_project_tags_from_project_id(project_id, deep_search)
-            tags_list = self.central_ci_api.extract_tag_name_and_title(tags_list)
-            helm_project["tags"] = tags_list
-            helm_projects_with_tags.append(helm_project)        
-
-        helm_project_tags = self.central_ci_api.find_tags_of_projects(helm_projects_list)
         return helm_project_tags
 
     def fetch_requirements_file(self):
+        """Fetches requirements.yaml file from gitlab and saves it locally."""
+
         uri = self.yaml_uri.format(project = self.default_project,
                                    branch = self.target_branch,
                                    path = self.default_path,
@@ -128,19 +152,52 @@ class RequirementsYamlUpdater():
         write_text_to_file(str(response.text), self.default_filename, mode = "w")
 
     def get_changed_tags(self, deep_search = False):
+        """Finds which tags have changed in the target branch.
+        
+        Args:
+            deep_search(boolean): If true, all tags of the project will be
+                                    checked.
+                                    If False, only the last 50 tags will be checked.
+            
+        Returns:
+            helm_projects_with_changed_tag(list): A list with dictionaries containing:
+                                        - "name" : Project name,
+                                        - "id" : Project id,
+                                        - "tags" : Project tags related to target branch.
+
+        """
+
+
         helm_projects_with_changed_tag = []
         
         helm_projects_with_tags = self.fetch_helm_tags(deep_search)
 
         helm_projects_with_changed_tag = self.find_projects_related_with_branch(helm_projects_with_tags)
 
-        for helm_project in helm_projects_with_changed_tag:
-            helm_project["changed-tag"] = self.get_simple_tag(helm_project["tags"])
+        # for helm_project in helm_projects_with_changed_tag:
+        #     helm_project["changed-tag"] = self.get_simple_tag(helm_project["tags"])
 
         return helm_projects_with_changed_tag
 
     def get_simple_tag(self, tags_list):
-        simple_tag = None
+        """Selects one tag from the tags_list:
+            
+        Args:
+            tags_list(list): A list containing tags.
+
+        Returns:
+            - First tag of the list : If tags_list contains only one tag,
+            - "X.Y.Z" : If tags_list contains two tags, tag-1 = "X.Y.Z" and
+              tag-2 = "vX.Y.Z",
+        
+        Raises:
+            AssertionError:
+                - If tags_list contains more than two tags,
+                - If tags_list has two elements, but tag-1 = "X.Y.Z" and 
+                  tag-2 = "vU.V.W"
+
+        """
+        simple_tag = ""
         v_tag = ""
 
         if len(tags_list) > 2:
@@ -155,44 +212,82 @@ class RequirementsYamlUpdater():
         elif tags_list[1][0] == "v":
             v_tag = tags_list[1]
             simple_tag = tags_list[0]
-        
-        if v_tag[1:] != simple_tag:
+
+        if (v_tag[1:] != simple_tag) or (simple_tag == ""):
             raise AssertionError
-        
+
         return simple_tag
 
     def update_helm_tags(self, helm_projects_with_changed_tag):
-        with open(self.default_filename, "r") as yaml_stream:
+        """Creates a yaml object (dictionary) from requirements.yaml file
+        ad updates the tags that have changed.
+
+        Args:
+            helm_projects_with_changed_tag(list): A list with dictionaries containing
+                                                  (at least):
+                                                    - "name" : Project name,
+                                                    - "tags" : Changed tags.
+
+        Returns:
+            yaml_object(dictionary): The yaml object with the new tags.
+        
+        """
+        with open(self.default_filename, "r", encoding = "utf-8") as yaml_stream:
             yaml_object = yaml.safe_load(yaml_stream)
 
-        #yaml_helm_repos_list = yaml_object["dependencies"]
-        
-        # Tranform the json object "helm_projects_with_changed_tag"
-        # into a dict of the form: {'helm-name-1' : 'tag-1', 
+        # Transform the json object "helm_projects_with_changed_tag"
+        # into a dict of the form: {'helm-name-1' : 'tag-1',
         #                           'helm-name-2' : 'tag-2',
         #                          . . . }
-        # in order to simplify time complexity of the replacement operation:
+        # in order to reduce time complexity of the replacement operation:
         # O(n^2) [nested for loop] to O(2n) [2 individual for loops]
-        helm_projects_with_changed_tag = self.transform_list_of_dicts_to_single_kv_pair_dict(helm_projects_with_changed_tag, "name", "changed-tag")
-        helm_projects_with_changed_tag = self.remove_helm_prefix_from_project_name(helm_projects_with_changed_tag)
+        helm_projects_with_changed_tag = \
+            self.transform_list_of_dicts_to_single_kv_pair_dict(helm_projects_with_changed_tag,
+                                                                "name",
+                                                                "tags")
+        helm_projects_with_changed_tag = \
+            self.remove_helm_prefix_from_project_name(helm_projects_with_changed_tag)
 
         for yaml_helm_repo in yaml_object["dependencies"]:
             try:
                 name = yaml_helm_repo["name"]
-                new_tag = helm_projects_with_changed_tag[name]
-                
+
+                if name in MAP_DIFFERENT_NAMES.keys():
+                    name = MAP_DIFFERENT_NAMES[name]
+
+                tags_list = helm_projects_with_changed_tag[name]
+                new_tag = self.get_simple_tag(tags_list)
+
                 if yaml_helm_repo["version"].split("-")[1] == "ntas":
                     yaml_helm_repo["version"] = new_tag + "-ntas"
                 else:
                     yaml_helm_repo["version"] = new_tag
-            except KeyError:
+
+                helm_projects_with_changed_tag.pop(name)
+
+            except (AssertionError, KeyError):
                 continue
-        
-        # write_text_to_file(json.dumps(yaml_object["dependencies"], indent=2), "out.json", mode = "w")
+
+        self.failed_update = helm_projects_with_changed_tag
 
         return yaml_object
 
     def find_projects_related_with_branch(self, helm_projects_list_with_tags):
+        """Finds which projects are associated with the target branch by comparing
+        the title of each tag with the branch name.
+        
+        Args:
+            helm_projects_with_tags(list): A list with dictionaries containing
+                                           (at least):
+                                            - "name" : Project name,
+                                            - "id" : Project id,
+                                            - "tags" : Project tags.
+
+        Returns:
+            related_projects(list): A list with dictionaries containing the
+                                    projects that are related to the target branch.
+
+        """
         related_projects = []
         tags_related_to_branch = None
 
@@ -201,11 +296,11 @@ class RequirementsYamlUpdater():
 
             # TODO : tags_related_to_branch = self.central_ci_api.match_tag_with_title(tags, self.target_branch)
             tags_related_to_branch = self.central_ci_api.match_tag_with_title(tags, "Update helm-common version to use new zts_BRM_labels")
-            
+
             if len(tags_related_to_branch) > 0:
                 helm_project["tags"] = tags_related_to_branch
                 related_projects.append(helm_project)
-                
+
         return related_projects
 
     def transform_list_of_dicts_to_single_kv_pair_dict(self, _list, key_for_key, key_for_value):
@@ -245,46 +340,36 @@ class RequirementsYamlUpdater():
             version = element["version"]
             repository = element["repository"]
 
-            write_text_to_file("  - name: {}\n".format(name), self.default_filename, mode = "a")
+            write_text_to_file(f"  - name: {name}\n", self.default_filename, mode = "a")
             line_counter += 1
-            write_text_to_file("    version: {}\n".format(version), self.default_filename, mode = "a")
+            write_text_to_file(f"    version: {version}\n", self.default_filename, mode = "a")
             line_counter += 1
-            write_text_to_file("    repository: {}\n".format(repository), self.default_filename, mode = "a")
+            write_text_to_file(f"    repository: {repository}\n", self.default_filename, mode = "a")
             line_counter += 1
 
             if "alias" in element.keys():
                 alias = element["alias"]
-                write_text_to_file("    alias: {}\n".format(alias), self.default_filename, mode = "a")
+                write_text_to_file(f"    alias: {alias}\n", self.default_filename, mode = "a")
                 line_counter += 1
 
             if "condition" in element.keys():
                 condition = element["condition"]
-                write_text_to_file("    condition: {}\n".format(condition), self.default_filename, mode = "a")
+                write_text_to_file(f"    condition: {condition}\n", self.default_filename, mode = "a")
                 line_counter += 1
             
             if "metadata" in element.keys():
                 metadata = element["metadata"]
-                write_text_to_file("    metadata: {}\n".format(metadata), self.default_filename, mode = "a")
+                write_text_to_file(f"    metadata: {metadata}\n", self.default_filename, mode = "a")
                 line_counter += 1
 
     def find_comments(self):
         comments_dict = {}
         line_counter = 1
 
-        with open(self.default_filename, "r") as yaml_stream:
+        with open(self.default_filename, "r", encoding = "utf-8") as yaml_stream:
             for line in yaml_stream.readlines():
                 if line[0].strip() == "#":
                     comments_dict[line_counter] = line
                 line_counter += 1
 
         return comments_dict
-
-if __name__ == "__main__":
-    yaml_updater = RequirementsYamlUpdater()
-    
-    with open("out.json") as f:
-        yamlo = json.load(f)
-    
-    yaml_object = {}
-    yaml_object["dependencies"] = yamlo
-    yaml_updater.write_yaml_to_file(yaml_object)

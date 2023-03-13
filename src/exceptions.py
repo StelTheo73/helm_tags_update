@@ -16,7 +16,7 @@ class BaseTracerException(Exception):
         self.method_name = method_name
         self.msg = msg
 
-        self.message = f"{self.exception_name} (from {self.method_name}):\n{self.msg}\n"
+        self.message = f"{self.exception_name} (from {self.method_name}):\n    {self.msg}\n"
 
         write_text_to_file(self.message, EXECUTION_LOG_FILE, mode = "a")
         write_text_to_file(self.message, ERROR_LOG_FILE, mode="a")

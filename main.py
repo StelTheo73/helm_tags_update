@@ -1,73 +1,117 @@
+"""Main module."""
+
 # Python Libraries
+import json
 import os
 import os.path
 
 # Program Libraries
-from src.exceptions import (
-    FetchInfoFailedException
-)
-from src.contants import (
+from src.constants import (
     REQUIREMENTS_YAML_FILE,
     OLD_YAML_FILE,
     EXECUTION_LOG_FILE,
     ERROR_LOG_FILE
 )
-from src.YamlUpdater import KubernetesRequirementsYamlUpdater
+from src.exceptions import (
+    FetchInfoFailedException
+)
+from src.utils import write_text_to_file
+from src.requirements_yaml_updater import RequirementsYamlUpdater
+
+# Constants
+PWD = os.getcwd()
+REQUIREMENTS_YAML_FILE_PATH = os.path.join(PWD, REQUIREMENTS_YAML_FILE)
 
 def setup():
-    pwd = os.getcwd()
+    """Removes files created from previous execution."""
+
     files = [REQUIREMENTS_YAML_FILE, OLD_YAML_FILE, EXECUTION_LOG_FILE, ERROR_LOG_FILE]
 
     for file in files:
-        _file = os.path.join(pwd, file)
+        _file = os.path.join(PWD, file)
         if os.path.exists(_file):
             os.remove(_file)
 
-def main():
-    setup()
+def success():
+    """Prints the location of the updated file."""
+
+    msg = "\nSUCCESS\n" +\
+        f"{REQUIREMENTS_YAML_FILE} updated successfully.\n" +\
+        "Move the file to your local kubernetes repository and\n" +\
+        "commit your changes to gitlab.\n" +\
+        f"File location: {REQUIREMENTS_YAML_FILE_PATH}\n"
     
+    print(msg)
+    write_text_to_file(msg, EXECUTION_LOG_FILE, mode = "a")
+
+def partial_failure(failed):
+    """Prints the location of the updated file and
+    the helm projects whose tag could not be updated.
+    """
+
+    msg = "\nPARTIAL FAILURE\n" +\
+        "Some tags could not be updated.\n" +\
+        "Projects affected:\n" +\
+        json.dumps(failed, indent=2) +\
+        "\n\nYou have to update these tags manually.\n" +\
+        "Then, move the file to your local kubernetes repository and\n" +\
+        "commit your changes to gitlab.\n" +\
+        f"File location: {REQUIREMENTS_YAML_FILE_PATH}\n"
+
+    print(msg)
+    write_text_to_file(msg, EXECUTION_LOG_FILE, mode = "a")
+    write_text_to_file(msg, ERROR_LOG_FILE, mode = "a")
+
+def main():
+    """Main function.
+    
+    Removes remaining files from previous executions.
+    Initializes RequirementsYamlUpdater.
+    """
+
+    # Remove remaining files from previous executions
+    setup()
+
+    # Initialize RequirementsYamlUpdater
+    yaml_updater = RequirementsYamlUpdater()
+
     try:
-        yamlUpdater = KubernetesRequirementsYamlUpdater()
-        yamlUpdater.get_branch()
-        yamlUpdater.fetch_requirements_file()
-        helm_projects_with_changed_tag = yamlUpdater.get_changed_tags()
-        updated_yaml_object = yamlUpdater.update_helm_tags(helm_projects_with_changed_tag)
-        yamlUpdater.write_yaml_to_file(updated_yaml_object)
+        # Get target branch
+        yaml_updater.get_branch()
+        # Fetch requirements.yaml file from gitlab
+        yaml_updater.fetch_requirements_file()
+        # Find which tags have changed
+        helm_projects_with_changed_tag = yaml_updater.get_changed_tags()
+        # Update tags with the new ones
+        updated_yaml_object = yaml_updater.update_helm_tags(helm_projects_with_changed_tag)
+        # Write changes to requirements.yaml
+        yaml_updater.write_yaml_to_file(updated_yaml_object)
+
+        failed = yaml_updater.failed_update
+
+        if not failed:
+            success()
+        else:
+            partial_failure(failed)
+
     except KeyboardInterrupt:
-        print("\nExecution terminated by user.")
+        print("\n\nExecution terminated by user.")
     except FetchInfoFailedException as exc:
         print(exc)
+        print("\n\nUpdate failed!")
+    except Exception as exc:
+        print("\n\nUpdate failed!")
+        raise FetchInfoFailedException("main", str(exc)) from exc
 
 
 if __name__ == "__main__":
+    # from src.central_ci_api import CentralCIAPI
+    # import json
+    # api = CentralCIAPI()
+    # # json_list = api.get_subgroups_of_group("ntas")
+    # # helm_id = api.get_project_id_from_project_name
+
+    # jl = api.get_project_tags_from_project_id(8518)
+    # print(json.dumps(jl, indent=2))
+    
     main()
-
-
-# mgr = GitlabAPIManager()
-# id = mgr.get_subgroup_id_from_name("ntas", "helm")
-# projects_list = mgr.get_projects_of_group(id)
-# projects_list = mgr.extract_project_name_and_id(projects_list)
-
-# projetcs_with_tags = mgr.find_tags_of_projects(projects_list)
-# print(json.dumps(projetcs_with_tags[0:10], indent = 2))
-
-#------------------------------------------------------------------------
-# mgr1 = Gitlab1APIManager()
-# print(mgr1.get_project_id_from_project_name("kubernetes", "tas"))
-#------------------------------------------------------------------------
-# projects_list = sort_list_dict_by_name(projects_list)
-# for el in projects_list:
-#     print(el["name"], el["id"], sep = ", ")
-
-#projects_dict = GitlabAPIManager.transform_list_of_dicts_to_single_kv_pair_dict(projects_list, "name", "id")
-#id = projects_dict["helm-base"]
-#tags_list = mgr.get_project_tags_from_project_id(id) 
-#tags_list = mgr.extract_tag_name_and_title(tags_list)
-
-#response_list = sorted(response_list, key = lambda d: (d["commit"]["committed_date"], d["name"]), reverse = True)
-#print(json.dumps(tags_list[0:10], indent = 2))
-#tags_list = GitlabAPIManager.transform_list_of_dicts_to_single_kv_pair_dict(tags_list, "name", "title")
-#for el in tags_list.keys():
-#    print(el, tags_list[el])
-
-#mgr.find_tag_by_title(tags_list, "fc")

@@ -1,0 +1,15 @@
+{
+    "python.analysis.typeCheckingMode": "basic",
+    "cSpell.words": [
+        "autoattendant",
+        "backoff",
+        "forcelist",
+        "mgmt",
+        "ntas",
+        "oapi",
+        "oapidocs"
+    ],
+    "cSpell.ignoreWords": [
+        "CIAPI"
+    ]
+}
