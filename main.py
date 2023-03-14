@@ -125,8 +125,7 @@ def failure(exception):
 def main(branch, deep_search):
     """Main function.
     
-    Removes remaining files from previous executions.
-    Initializes RequirementsYamlUpdater.
+    Initializes RequirementsYamlUpdater and updates the tags.
 
     Args:
         branch(string): The target branch in /tas/kubernetes
