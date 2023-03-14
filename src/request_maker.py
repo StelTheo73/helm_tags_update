@@ -159,7 +159,7 @@ class RequestMaker(requests.Session):
 
             response = self.make_request_and_display_spinner(page_uri, _spinner_text)
 
-            if (response.text == "[]") or (response.text == ""):
+            if response.text in ["[]", ""]:
                 break
             json_list += json.loads(response.text)
 

@@ -53,3 +53,14 @@ def add_timestamp_to_text(text):
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"{timestamp} {text}"
+
+def is_string(obj):
+    """Returns True if the given object's value is a string.
+
+    Args:
+        obj(object): The object to check.
+
+    Returns:
+        (bool): True if the given object's value is a string.
+    """
+    return isinstance(obj, str)

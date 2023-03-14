@@ -117,7 +117,7 @@ class GitlabAPI(RequestMaker):
 
         """
         group_id = self.get_group_id_from_name(group_name)
-        
+
         uri = self.project_search_by_name_uri.format(group_id = group_id)
         uri = uri.format(project_name = project_name)
 
@@ -127,7 +127,7 @@ class GitlabAPI(RequestMaker):
         for element in json_list:
             if element["name"] == project_name:
                 return element["id"]
-        
+
         raise ElementNotFoundException(stack()[0], project_name)
 
     def get_project_tags_from_project_id(self, project_id, deep_search = False):
@@ -147,7 +147,8 @@ class GitlabAPI(RequestMaker):
 
         """
         uri = self.project_tags_uri.format(project_id = project_id)
-        json_list = self.recursive_request(uri, deep_search, spinner_text = f"project {project_id} tags")
+        json_list = self.recursive_request(uri, deep_search,
+                                           spinner_text = f"project {project_id} tags")
         return json_list
 
     def get_branch_info(self, group_name, project_name, branch_name):
@@ -165,7 +166,7 @@ class GitlabAPI(RequestMaker):
 
         """
         project_id = self.get_project_id_from_project_name(project_name, group_name)
-        uri = self.branches_uri.format(project_id = project_id) + "/{}".format(branch_name)
+        uri = self.branches_uri.format(project_id = project_id) + f"/{branch_name}"
         spinner_text = f"info for branch {branch_name} of /{group_name}/{project_name}"
         response = self.make_request_and_display_spinner(uri, spinner_text)
         return json.loads(response.text)
@@ -223,7 +224,7 @@ class GitlabAPI(RequestMaker):
             title = element["title"].lower()
             if re.match(pattern, title):
                 matches.append(element["name"])
-        
+
         return matches
 
     def extract_project_name_and_id(self, json_list):

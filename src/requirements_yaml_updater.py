@@ -60,21 +60,42 @@ class RequirementsYamlUpdater():
         self.legacy_ci_api = LegacyCIAPI()
 
     def get_branch(self):
-        """Executes iteratively get_branch_name inside a try-except block
-           until a branch with the specified name is found in
-           Central CI.
+        """Prompts user to specify the target branch of /tas/kubernetes project,
+        if target_branch is not set.
+        
+        Executes iteratively verify_branch_exists inside a try-except block
+        until a branch with the specified name is found in Central CI.
+
         """
-        while (self.target_branch is None):
+        message = "Type the target branch name: "
+        error_message = "Branch name cannot be empty!"
+
+        # Verify that branch exists if target_branch is already set.
+        if (self.target_branch is not None) and (self.target_branch != ""):
             try:
-                self.target_branch = self.get_branch_name()
+                self.verify_branch_exists(self.target_branch)
+            except BranchNotFoundException:
+                # Set target_branch to None if it does not exist.
+                self.target_branch = None
+
+        # If target_branch is not set, then prompt user to specify it.
+        while (self.target_branch is None) or (self.target_branch == ""):
+            branch_input = input(message)
+
+            if branch_input == "":
+                print(error_message)
+                continue
+
+            try:
+                self.target_branch = self.verify_branch_exists(branch_input)
             except BranchNotFoundException:
                 continue
 
-    def get_branch_name(self):
-        """Prompts user to give a branch name and fetches branch info 
-        from Central CI.
+    def verify_branch_exists(self, branch_input):
+        """Ensures that branch_input is an existing branch of /tas/kubernetes project in Central CI.
 
-        Ensures that branch_input is an existing branch in Central CI.
+        Args:
+            branch_input(string): The branch name to search for in Central CI.
 
         Returns:
             branch_input(string): The branch name (if it was found in Central CI). 
@@ -83,40 +104,33 @@ class RequirementsYamlUpdater():
             BranchNotFoundException: If the given branch is not found. 
 
         """
-        message = "Type the target branch name: "
-        error_message = "Branch name cannot be empty!"
+        # message = "Type the target branch name: "
+        # error_message = "Branch name cannot be empty!"
 
         _, group, project = self.default_project.split("/")
 
-        while True:
-            branch_input = input(message)
+        try:
+            response = self.legacy_ci_api.get_branch_info(group, project, branch_input)
 
-            if branch_input == "":
-                print(error_message)
-                continue
+            if response["name"] == branch_input:
+                return branch_input
+            else:
+                name = response["name"]
+                exc_msg = "Fetched branch name and specified target branch name " +\
+                    f"are different (\"{name}\" != \"{branch_input}\")"
+                raise BranchNotFoundException(stack()[0], branch_input, exc_msg)
 
-            try:
-                response = self.legacy_ci_api.get_branch_info(group, project, branch_input)
-
-                if response["name"] == branch_input:
-                    return branch_input
-                else:
-                    name = response["name"]
-                    exc_msg = "Fetched branch name and specified target branch name " +\
-                        f"are different (\"{name}\" != \"{branch_input}\")"
-                    raise BranchNotFoundException(stack()[0], branch_input, exc_msg)
-
-            except FetchInfoFailedException as exc:
-                exc_msg = str(exc)
-                if "Response status code was: 404" in exc_msg:
-                    msg = f"\nBranch \"{branch_input}\" was not found. " +\
-                        "Make sure it exists or check for typo.\n"
-                    print(msg)
-                raise BranchNotFoundException(stack()[0], branch_input, exc_msg) \
-                    from exc
-            except KeyError as exc:
-                raise BranchNotFoundException(stack()[0], branch_input, exc) \
-                    from exc
+        except FetchInfoFailedException as exc:
+            exc_msg = str(exc)
+            if "Response status code was: 404" in exc_msg:
+                msg = f"\nBranch \"{branch_input}\" was not found. " +\
+                    "Make sure it exists or check for typo.\n"
+                print(msg)
+            raise BranchNotFoundException(stack()[0], branch_input, exc_msg) \
+                from exc
+        except KeyError as exc:
+            raise BranchNotFoundException(stack()[0], branch_input, exc) \
+                from exc
 
     def fetch_helm_tags(self, deep_search):
         """Fetches tags of the helm projects from gitlab.
@@ -293,9 +307,10 @@ class RequirementsYamlUpdater():
 
         for helm_project in helm_projects_list_with_tags:
             tags = helm_project["tags"]
-
-            # TODO : tags_related_to_branch = self.central_ci_api.match_tag_with_title(tags, self.target_branch)
-            tags_related_to_branch = self.central_ci_api.match_tag_with_title(tags, "Update helm-common version to use new zts_BRM_labels")
+            # TODO : REMOVE LINES 312 AND 313 AND REPLACE UNCOMMENT THE FOLLOWING LINE WHEN READY
+            # tags_related_to_branch = self.central_ci_api.match_tag_with_title(tags, self.target_branch)
+            override_branch_name = "Update helm-common version to use new zts_BRM_labels"
+            tags_related_to_branch = self.central_ci_api.match_tag_with_title(tags, override_branch_name)
 
             if len(tags_related_to_branch) > 0:
                 helm_project["tags"] = tags_related_to_branch
@@ -304,6 +319,39 @@ class RequirementsYamlUpdater():
         return related_projects
 
     def transform_list_of_dicts_to_single_kv_pair_dict(self, _list, key_for_key, key_for_value):
+        """Transforms a list with dictionaries with multiple key-value pairs to a dict 
+        whose keys will be the values of key_for_key paired with the values of key_for_value.
+
+        Args:
+            _list(list): The list to be transformed.
+            key_for_key(string): The key of the initial dict
+                                 whose value will be the key in the
+                                 new one.
+            key_for_value(string): The key of the initial dict
+                                   whose value will be paired
+                                   with the new key.
+
+        Returns:
+            _dict(dictionary): The transformed dictionary.
+                                 
+        """
+
+        # Example:
+        #     INPUT:
+        #         - _list = [
+        #             {"name" : "foo", "id" : 1, ... },
+        #             {"name" : "bar", "id" : 2, ... },
+        #             ...
+        #             ]
+        #         - key_for_key = "name"
+        #         - key_for_value = "id"
+
+        #     OUTPUT:
+        #         - { "foo" : 1,
+        #             "bar" : 2
+        #           }
+
+
         _dict = {}
         for element in _list:
             name, id = element[key_for_key], element[key_for_value]
@@ -311,6 +359,22 @@ class RequirementsYamlUpdater():
         return _dict
 
     def remove_helm_prefix_from_project_name(self, helm_projects_dict):
+        """Removes "helm-" prefix from the keys of the provided dictionary.
+
+        Args:
+            helm_projects_dict(dictionary): A dictionary with the following format:
+                                            { "helm-project-X" : "id-X",
+                                              ...
+                                              "helm-project-Y" : "id-Y",
+                                              "dummy-project-Z" : "id-Z",
+                                              ...
+                                            }
+        
+        Returns:
+            helm_projects(dictionary): The initial dictionary after removing "helm-"
+                                       prefixes from its keys.
+            
+        """
         helm_projects = {}
         
         for helm_project_name in helm_projects_dict.keys():
@@ -323,6 +387,19 @@ class RequirementsYamlUpdater():
         return helm_projects
 
     def write_yaml_to_file(self, yaml_object):
+        """Writes yaml object to requirements.yaml file.
+        
+        Args:
+            yaml_object(dictionary): The yaml object to be written.
+
+        """
+
+        # PyYaml's dumper could not be used because:
+            # (a) The order of the fields could no be preserved,
+            # (b) The comments were discarded,
+            # (c) The json objects present in yaml file were converted
+            #     in yaml notation.
+
         comments_dict = self.find_comments()
         line_counter = 1
 
@@ -340,29 +417,43 @@ class RequirementsYamlUpdater():
             version = element["version"]
             repository = element["repository"]
 
-            write_text_to_file(f"  - name: {name}\n", self.default_filename, mode = "a")
+            write_text_to_file(f"  - name: {name}\n",
+                               self.default_filename, mode = "a")
             line_counter += 1
-            write_text_to_file(f"    version: {version}\n", self.default_filename, mode = "a")
+            write_text_to_file(f"    version: {version}\n",
+                               self.default_filename, mode = "a")
             line_counter += 1
-            write_text_to_file(f"    repository: {repository}\n", self.default_filename, mode = "a")
+            write_text_to_file(f"    repository: {repository}\n",
+                               self.default_filename, mode = "a")
             line_counter += 1
 
             if "alias" in element.keys():
                 alias = element["alias"]
-                write_text_to_file(f"    alias: {alias}\n", self.default_filename, mode = "a")
+                write_text_to_file(f"    alias: {alias}\n",
+                                   self.default_filename, mode = "a")
                 line_counter += 1
 
             if "condition" in element.keys():
                 condition = element["condition"]
-                write_text_to_file(f"    condition: {condition}\n", self.default_filename, mode = "a")
+                write_text_to_file(f"    condition: {condition}\n",
+                                   self.default_filename, mode = "a")
                 line_counter += 1
-            
+
             if "metadata" in element.keys():
                 metadata = element["metadata"]
-                write_text_to_file(f"    metadata: {metadata}\n", self.default_filename, mode = "a")
+                write_text_to_file(f"    metadata: {metadata}\n",
+                                   self.default_filename, mode = "a")
                 line_counter += 1
 
     def find_comments(self):
+        """Finds the lines which start with a "#" in requirements.yaml file.
+
+        Returns:
+            comments_dict(dictionary): A dictionary whose keys are the number of
+                                       the lines starting with an "#" and values
+                                       are the content of each line.
+        
+        """
         comments_dict = {}
         line_counter = 1
 
