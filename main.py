@@ -1,9 +1,11 @@
 """Main module."""
 
 # Python Libraries
+import getopt
 import json
 import os
 import os.path
+import sys
 
 # Program Libraries
 from src.constants import (
@@ -15,12 +17,59 @@ from src.constants import (
 from src.exceptions import (
     FetchInfoFailedException
 )
-from src.utils import write_text_to_file
+from src.utils import (
+    is_string,
+    write_text_to_file)
 from src.requirements_yaml_updater import RequirementsYamlUpdater
 
 # Constants
 PWD = os.getcwd()
 REQUIREMENTS_YAML_FILE_PATH = os.path.join(PWD, REQUIREMENTS_YAML_FILE)
+
+def print_help():
+    """Prints help message."""
+    msg = """Options:
+    -h, --help                          : Display help.
+    -b, --branch <string: branch-name>  : (optional) The target branch for /tas/kubernetes project, 
+                                                        can be specified later.
+    -d, --deep <bool: True/False>       : (optional) 
+                                            - [True / 1]  --> All tags of each helm project will be
+                                                                fetched.
+                                            - [False / 0] --> (default) Only the last 50 tags of each
+                                                                helm project will be fetched.
+        """
+    print(msg)
+
+def parse_arguments(argv):
+    """Parses the provided arguments."""
+    arg_branch = None
+    arg_deep = False
+    #arg_help = "{0} -b <branch name> -d <deep-search>".format(argv[0]) 
+
+    try:
+        opts, _ = getopt.getopt(argv[1:], "h:b:d:", ["help", "branch=", "deep="])
+    except Exception:
+        print_help()
+        sys.exit(1)
+
+    for opt, arg in opts:
+        if opt in ("-h", "--help"):
+            print_help()
+            sys.exit(0)
+        elif opt in ["-b", "--branch"]:
+            if not is_string(arg):
+                print_help()
+                sys.exit(1)
+            arg_branch = arg
+        elif opt in ["-d", "--deep"]:
+            if (not is_string(arg)) or (arg.capitalize() not in ("True", "False", "1", "0")):
+                print_help()
+                sys.exit(1)
+            if arg.capitalize() in ("True", "1"):
+                arg_deep = True
+                # default is False
+
+    return arg_branch, arg_deep
 
 def setup():
     """Removes files created from previous execution."""
@@ -40,7 +89,7 @@ def success():
         "Move the file to your local kubernetes repository and\n" +\
         "commit your changes to gitlab.\n" +\
         f"File location: {REQUIREMENTS_YAML_FILE_PATH}\n"
-    
+
     print(msg)
     write_text_to_file(msg, EXECUTION_LOG_FILE, mode = "a")
 
@@ -62,18 +111,31 @@ def partial_failure(failed):
     write_text_to_file(msg, EXECUTION_LOG_FILE, mode = "a")
     write_text_to_file(msg, ERROR_LOG_FILE, mode = "a")
 
-def main():
+def failure(exception):
+    """Prints failure message."""
+
+    msg = "\nFAILURE\n" +\
+        f"Reason: \n{exception}\n" +\
+        f"See {ERROR_LOG_FILE} for more info.\n"
+
+    print(msg)
+    write_text_to_file(msg, EXECUTION_LOG_FILE, mode = "a")
+    write_text_to_file(msg, ERROR_LOG_FILE, mode = "a")
+
+def main(branch, deep_search):
     """Main function.
     
     Removes remaining files from previous executions.
     Initializes RequirementsYamlUpdater.
-    """
 
-    # Remove remaining files from previous executions
-    setup()
+    Args:
+        branch(string): The target branch in /tas/kubernetes
+        deep_search(boolean):
+    """
 
     # Initialize RequirementsYamlUpdater
     yaml_updater = RequirementsYamlUpdater()
+    yaml_updater.target_branch = branch
 
     try:
         # Get target branch
@@ -81,7 +143,7 @@ def main():
         # Fetch requirements.yaml file from gitlab
         yaml_updater.fetch_requirements_file()
         # Find which tags have changed
-        helm_projects_with_changed_tag = yaml_updater.get_changed_tags()
+        helm_projects_with_changed_tag = yaml_updater.get_changed_tags(deep_search)
         # Update tags with the new ones
         updated_yaml_object = yaml_updater.update_helm_tags(helm_projects_with_changed_tag)
         # Write changes to requirements.yaml
@@ -95,23 +157,12 @@ def main():
             partial_failure(failed)
 
     except KeyboardInterrupt:
-        print("\n\nExecution terminated by user.")
-    except FetchInfoFailedException as exc:
-        print(exc)
-        print("\n\nUpdate failed!")
-    except Exception as exc:
-        print("\n\nUpdate failed!")
-        raise FetchInfoFailedException("main", str(exc)) from exc
-
+        failure("Execution terminated by user.")
+    except (FetchInfoFailedException, Exception) as exc:
+        failure(str(exc))
 
 if __name__ == "__main__":
-    # from src.central_ci_api import CentralCIAPI
-    # import json
-    # api = CentralCIAPI()
-    # # json_list = api.get_subgroups_of_group("ntas")
-    # # helm_id = api.get_project_id_from_project_name
-
-    # jl = api.get_project_tags_from_project_id(8518)
-    # print(json.dumps(jl, indent=2))
-    
-    main()
+    branch, deep_search = parse_arguments(sys.argv)
+    # Remove remaining files from previous executions
+    setup()
+    main(branch, deep_search)
